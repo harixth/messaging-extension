@@ -9,8 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.integration.annotation.ServiceActivator;
+import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.PublishSubscribeChannel;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
@@ -18,32 +20,31 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class ReceiverChannel {
 
-    // Create a message channel for messages arriving from the subscription `sub-one`.
     @Bean
     public MessageChannel inputMessageChannel() {
-        return new PublishSubscribeChannel();
+        return new DirectChannel();
     }
 
-    // Create an inbound channel adapter to listen to the subscription `sub-one` and send
-    // messages to the input message channel.
     @Bean
     public PubSubInboundChannelAdapter inboundChannelAdapter(
             @Qualifier("inputMessageChannel") MessageChannel messageChannel,
             PubSubTemplate pubSubTemplate) {
         PubSubInboundChannelAdapter adapter =
-                new PubSubInboundChannelAdapter(pubSubTemplate, "sub-one");
+                new PubSubInboundChannelAdapter(pubSubTemplate,
+                        "usage-threshold-80pct-subscription");
         adapter.setOutputChannel(messageChannel);
         adapter.setAckMode(AckMode.MANUAL);
-        adapter.setPayloadType(String.class);
         return adapter;
     }
 
-    // Define what happens to the messages arriving in the message channel.
+    @Bean
     @ServiceActivator(inputChannel = "inputMessageChannel")
-    public void messageReceiver(
-            String payload,
-            @Header(GcpPubSubHeaders.ORIGINAL_MESSAGE) BasicAcknowledgeablePubsubMessage message) {
-        log.info("Message arrived via an inbound channel adapter from sub-one! Payload: " + payload);
-        message.ack();
+    public MessageHandler messageReceiver() {
+        return message -> {
+            log.info("Message arrived! Payload: " + new String((byte[]) message.getPayload()));
+            BasicAcknowledgeablePubsubMessage originalMessage =
+                    message.getHeaders().get(GcpPubSubHeaders.ORIGINAL_MESSAGE, BasicAcknowledgeablePubsubMessage.class);
+            originalMessage.ack();
+        };
     }
 }
